@@ -3,6 +3,7 @@
 #include <cctype>
 
 namespace flow {
+
 size_t DomainMatcher::StringHash::operator()(std::string_view sv) const noexcept
 {
     return std::hash<std::string_view>{}(sv);
@@ -33,17 +34,11 @@ bool DomainMatcher::StringEqual::operator()(std::string_view a, const std::strin
     return a == b;
 }
 
-/* =========================
- * Ctor
- * ========================= */
 DomainMatcher::DomainMatcher()
 {
     root_ = std::make_unique<TrieNode>();
 }
 
-/* =========================
- * addRule
- * ========================= */
 bool DomainMatcher::addRule(const DomainRule& rule)
 {
     std::unique_lock lock(mutex_);
@@ -90,12 +85,13 @@ bool DomainMatcher::addRule(const DomainRule& rule)
 
     for (size_t i = 0; i < count; ++i)
     {
-        auto it = label_to_id_.find(std::string(labels[i]));
+        std::string label_str(labels[i]);
+        auto it = label_to_id_.find(label_str);
         if (it == label_to_id_.end())
         {
             uint32_t id = static_cast<uint32_t>(id_to_label_.size());
-            label_to_id_.emplace(std::string(labels[i]), id);
-            id_to_label_.push_back(std::string(labels[i]));
+            label_to_id_.emplace(label_str, id);
+            id_to_label_.push_back(std::move(label_str));
             label_ids.push_back(id);
         }
         else
@@ -122,14 +118,12 @@ bool DomainMatcher::addRule(const DomainRule& rule)
     return true;
 }
 
-std::vector<RuleId>
-DomainMatcher::match(std::string_view domain) const
+std::vector<RuleId> DomainMatcher::match(std::string_view domain) const
 {
     return matchAll(domain);
 }
 
-std::vector<RuleId>
-DomainMatcher::matchAll(std::string_view domain) const
+std::vector<RuleId> DomainMatcher::matchAll(std::string_view domain) const
 {
     std::shared_lock lock(mutex_);
 
@@ -140,52 +134,57 @@ DomainMatcher::matchAll(std::string_view domain) const
     normalizeInPlace(normalized);
 
     std::array<std::string_view, 16> labels;
-    size_t count = splitReverseInPlace(normalized, labels);
-    if (count == 0)
+    size_t total_count = splitReverseInPlace(normalized, labels);
+    if (total_count == 0)
         return {};
 
     std::array<uint32_t, 16> label_ids;
-    for (size_t i = 0; i < count; ++i)
+    size_t valid_count = 0;
+
+    for (size_t i = 0; i < total_count; ++i)
     {
-        auto it = label_to_id_.find(std::string(labels[i]));
+        std::string label_str(labels[i]);
+        auto it = label_to_id_.find(label_str);
         if (it == label_to_id_.end())
-            return {};
+        {
+            valid_count = i;
+            break;
+        }
         label_ids[i] = it->second;
     }
 
+    if (valid_count == 0)
+        valid_count = total_count;
+
     std::vector<RuleId> results;
-    matchAllRecursive(root_.get(), label_ids, count, 0, results);
+    matchAllRecursive(root_.get(), label_ids, valid_count, total_count, 0, results);
+
     return results;
 }
 
-void DomainMatcher::matchAllRecursive(
-    const TrieNode* node,
-    const std::array<uint32_t, 16>& label_ids,
-    size_t count,
-    size_t index,
-    std::vector<RuleId>& results) const
+void DomainMatcher::matchAllRecursive(const TrieNode* node, const std::array<uint32_t, 16>& label_ids, size_t valid_count, size_t total_count, size_t index, std::vector<RuleId>& results) const
 {
     if (!node)
         return;
 
-    /* 1️⃣ 深度优先：精确路径 */
-    if (index < count)
+    if (index < valid_count)
     {
         auto it = node->children.find(label_ids[index]);
         if (it != node->children.end())
         {
-            matchAllRecursive(
-                it->second.get(), label_ids, count, index + 1, results);
+            matchAllRecursive(it->second.get(), label_ids, valid_count, total_count, index + 1, results);
         }
     }
 
-    /* 2️⃣ 精确规则：仅当完全匹配 */
-    if (index == count && node->exact_rule)
+    if (index == valid_count && valid_count == total_count && node->exact_rule)
+    {
         results.push_back(*node->exact_rule);
+    }
 
-    /* 3️⃣ wildcard：必须还有剩余层级 */
-    if (index < count && node->wildcard_rule)
+    if (index < total_count && node->wildcard_rule)
+    {
         results.push_back(*node->wildcard_rule);
+    }
 }
 
 bool DomainMatcher::removeRule(RuleId rule_id)
@@ -196,21 +195,13 @@ bool DomainMatcher::removeRule(RuleId rule_id)
     if (it == rule_index_.end())
         return false;
 
-    removeRuleRecursive(
-        root_.get(),
-        it->second.labels,
-        0,
-        it->second.is_wildcard);
+    removeRuleRecursive(root_.get(), it->second.labels, 0, it->second.is_wildcard);
 
     rule_index_.erase(it);
     return true;
 }
 
-bool DomainMatcher::removeRuleRecursive(
-    TrieNode* node,
-    const std::vector<uint32_t>& labels,
-    size_t index,
-    bool is_wildcard)
+bool DomainMatcher::removeRuleRecursive(TrieNode* node, const std::vector<uint32_t>& labels, size_t index, bool is_wildcard)
 {
     if (!node)
         return false;
@@ -228,21 +219,15 @@ bool DomainMatcher::removeRuleRecursive(
         if (it == node->children.end())
             return false;
 
-        bool erase_child = removeRuleRecursive(
-            it->second.get(), labels, index + 1, is_wildcard);
+        bool should_erase = removeRuleRecursive(it->second.get(), labels, index + 1, is_wildcard);
 
-        if (erase_child)
+        if (should_erase)
             node->children.erase(it);
     }
 
-    return node->children.empty() &&
-           !node->exact_rule &&
-           !node->wildcard_rule;
+    return node->children.empty() && !node->exact_rule && !node->wildcard_rule;
 }
 
-/* =========================
- * clear
- * ========================= */
 void DomainMatcher::clear()
 {
     std::unique_lock lock(mutex_);
@@ -252,9 +237,6 @@ void DomainMatcher::clear()
     id_to_label_.clear();
 }
 
-/* =========================
- * Utilities
- * ========================= */
 bool DomainMatcher::validateDomain(std::string_view d)
 {
     if (d.empty())
@@ -304,9 +286,7 @@ void DomainMatcher::normalizeInPlace(std::string& s)
         s.pop_back();
 }
 
-size_t DomainMatcher::splitReverseInPlace(
-    std::string_view domain,
-    std::array<std::string_view, 16>& labels)
+size_t DomainMatcher::splitReverseInPlace(std::string_view domain, std::array<std::string_view, 16>& labels)
 {
     size_t count = 0;
     size_t end = domain.size();
@@ -333,6 +313,7 @@ size_t DomainMatcher::splitReverseInPlace(
         labels[count++] = part;
         end = dot;
     }
+
     return count;
 }
 

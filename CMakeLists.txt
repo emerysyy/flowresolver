@@ -85,6 +85,48 @@ if(BUILD_TESTS)
 
     add_test(NAME policy_engine_test COMMAND test_policy_engine)
 
+    # Port filter test
+    add_executable(test_port_filter
+        tests/test_port_filter.cpp
+        src/Filter/port_matcher.cpp
+    )
+    target_link_libraries(test_port_filter domainresolver)
+
+    add_test(NAME port_filter_test COMMAND test_port_filter)
+
+    # Domain filter test
+    add_executable(test_domain_filter
+        tests/test_domain_filter.cpp
+        src/Filter/domain_matcher.cpp
+    )
+    target_link_libraries(test_domain_filter domainresolver)
+
+    add_test(NAME domain_filter_test COMMAND test_domain_filter)
+
+    # IP filter test
+    add_executable(test_ip_filter
+        tests/test_ip_filter.cpp
+    )
+    target_link_libraries(test_ip_filter domainresolver)
+
+    add_test(NAME ip_filter_test COMMAND test_ip_filter)
+
+    # Benchmark test
+    add_executable(test_benchmark
+        tests/test_benchmark.cpp
+        src/Filter/domain_matcher.cpp
+        src/Filter/port_matcher.cpp
+    )
+    target_link_libraries(test_benchmark domainresolver)
+
+    # Latency test
+    add_executable(test_latency
+        tests/test_latency.cpp
+        src/Filter/domain_matcher.cpp
+        src/Filter/port_matcher.cpp
+    )
+    target_link_libraries(test_latency domainresolver)
+
     # DNS test (commented out - file not exists)
     # add_executable(test_dns
     #     tests/test_dns.cpp

@@ -31,23 +31,36 @@ bool PolicyEngine::addPolicy(const Policy& policy) {
     }
 
     // 添加到 IP 索引
-    if (ip.isV4()) {
-        if (policy.address.find('/') != std::string::npos) {
-            ip_index_.addIPv4CIDR(v4_cidr, policy.rule_id);
-        } else if (policy.address.find('-') != std::string::npos) {
-            ip_index_.addIPv4Range(v4_range.start, v4_range.end, policy.rule_id);
-        } else {
-            ip_index_.addIPv4Exact(ip.v4, policy.rule_id);
-        }
+    // 注意：不能依赖 ip.isV4()/isV6() 因为 CIDR/Range 不会设置 ip 的类型
+    // 必须直接检查 address 字符串
+
+    // IPv4 类型规则
+    if (policy.address.find('/') != std::string::npos &&
+        policy.address.find(':') == std::string::npos) {
+        // IPv4 CIDR
+        ip_index_.addIPv4CIDR(v4_cidr, policy.rule_id);
+    } else if (policy.address.find('-') != std::string::npos &&
+               policy.address.find(':') == std::string::npos) {
+        // IPv4 Range
+        ip_index_.addIPv4Range(v4_range.start, v4_range.end, policy.rule_id);
+    } else if (ip.isV4()) {
+        // IPv4 精确匹配
+        ip_index_.addIPv4Exact(ip.v4, policy.rule_id);
+    }
+
+    // IPv6 类型规则
+    if (policy.address.find('/') != std::string::npos &&
+        policy.address.find(':') != std::string::npos) {
+        // IPv6 CIDR
+        ip_index_.addIPv6CIDR(v6_cidr, policy.rule_id);
+    } else if (policy.address.find('-') != std::string::npos &&
+               policy.address.find(':') != std::string::npos) {
+        // IPv6 Range
+        ip_index_.addIPv6Range(v6_range.hi_start, v6_range.lo_start,
+                               v6_range.hi_end, v6_range.lo_end, policy.rule_id);
     } else if (ip.isV6()) {
-        if (policy.address.find('/') != std::string::npos) {
-            ip_index_.addIPv6CIDR(v6_cidr, policy.rule_id);
-        } else if (policy.address.find('-') != std::string::npos) {
-            ip_index_.addIPv6Range(v6_range.hi_start, v6_range.lo_start,
-                                   v6_range.hi_end, v6_range.lo_end, policy.rule_id);
-        } else {
-            ip_index_.addIPv6Exact(ip.v6.hi, ip.v6.lo, policy.rule_id);
-        }
+        // IPv6 精确匹配
+        ip_index_.addIPv6Exact(ip.v6.hi, ip.v6.lo, policy.rule_id);
     }
 
     // ===== 端口处理 =====
@@ -65,6 +78,10 @@ bool PolicyEngine::addPolicy(const Policy& policy) {
                                    policy.address[0] == '*')) {
         flow::DomainRule domain_rule{policy.rule_id, policy.address};
         domain_matcher_.addRule(domain_rule);
+
+        // 将域名规则也添加到 IP 索引的 Nil 集合中
+        // 这样当 dstIP 为空（Kind::Nil）时，仍能匹配到域名规则
+        ip_index_.addNil(policy.rule_id);
     }
 
     policies_[policy.rule_id] = policy;
@@ -123,27 +140,46 @@ std::unordered_set<flow::RuleId> PolicyEngine::match(proto::ProtocolType protoco
     auto zero_port_results = port_matcher_.match(0);
     port_matches.insert(zero_port_results.begin(), zero_port_results.end());
 
-    // 2. IP 匹配
-    std::unordered_set<flow::RuleId> ip_matches;
-    auto ip_results = ip_index_.queryIds(dstIP);
-    ip_matches.insert(ip_results.begin(), ip_results.end());
-
-    // 3. 域名匹配
-    std::unordered_set<flow::RuleId> domain_matches;
-    for (const auto& domain : domains) {
-        auto matches = domain_matcher_.match(domain);
-        domain_matches.insert(matches.begin(), matches.end());
-    }
-
-    // 4. IP 或域名匹配并集
-    std::unordered_set<flow::RuleId> ip_or_domain = ip_matches;
-    ip_or_domain.insert(domain_matches.begin(), domain_matches.end());
-
-    // 5. 与端口匹配交集
     std::unordered_set<flow::RuleId> final_matches;
-    for (flow::RuleId rule_id : ip_or_domain) {
-        if (port_matches.find(rule_id) != port_matches.end()) {
-            final_matches.insert(rule_id);
+
+    // 2. 判断是否使用 IP 匹配或域名匹配
+    if (dstIP.isNil()) {
+        // IP 为空：只使用域名匹配
+        // 域名规则已通过 addNil 添加到 ip_index_，但这里我们只使用 domain_matcher
+        std::unordered_set<flow::RuleId> domain_matches;
+        for (const auto& domain : domains) {
+            auto matches = domain_matcher_.match(domain);
+            domain_matches.insert(matches.begin(), matches.end());
+        }
+
+        // 域名匹配与端口匹配取交集
+        for (flow::RuleId rule_id : domain_matches) {
+            if (port_matches.find(rule_id) != port_matches.end()) {
+                final_matches.insert(rule_id);
+            }
+        }
+    } else {
+        // IP 不为空：使用 IP 匹配，也可以结合域名匹配
+        std::unordered_set<flow::RuleId> ip_matches;
+        auto ip_results = ip_index_.queryIds(dstIP);
+        ip_matches.insert(ip_results.begin(), ip_results.end());
+
+        // 域名匹配
+        std::unordered_set<flow::RuleId> domain_matches;
+        for (const auto& domain : domains) {
+            auto matches = domain_matcher_.match(domain);
+            domain_matches.insert(matches.begin(), matches.end());
+        }
+
+        // IP 或域名匹配并集
+        std::unordered_set<flow::RuleId> ip_or_domain = ip_matches;
+        ip_or_domain.insert(domain_matches.begin(), domain_matches.end());
+
+        // 与端口匹配交集
+        for (flow::RuleId rule_id : ip_or_domain) {
+            if (port_matches.find(rule_id) != port_matches.end()) {
+                final_matches.insert(rule_id);
+            }
         }
     }
 

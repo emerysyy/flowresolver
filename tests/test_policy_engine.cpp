@@ -782,6 +782,330 @@ int main() {
         total_stats.failed += stats.failed;
     }
 
+    // ==================== Stress Test: 10,000 Rules ====================
+    std::cout << "\n========== Stress Test: 10,000 Rules ==========\n";
+
+    PolicyEngine stress_engine;
+    uint32_t stress_rule_id = 1;
+
+    auto start_insert = std::chrono::high_resolution_clock::now();
+
+    // Insert 1000 IPv4 exact rules
+    for (int i = 0; i < 1000; i++) {
+        uint32_t ip = (10 << 24) | ((i / 256) << 8) | (i % 256);
+        std::string ip_str = ipv4ToString(ip);
+        uint16_t port = 8000 + (i % 1000);
+        policy::Policy policy{stress_rule_id++, ip_str, std::to_string(port)};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add IPv4 exact rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 IPv4 CIDR rules
+    for (int i = 0; i < 1000; i++) {
+        uint32_t network = (192 << 24) | (168 << 16) | ((i % 256) << 8);
+        std::string cidr_str = ipv4ToString(network) + "/24";
+        uint16_t port = 9000 + (i % 1000);
+        policy::Policy policy{stress_rule_id++, cidr_str, std::to_string(port)};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add IPv4 CIDR rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 IPv4 range rules
+    for (int i = 0; i < 1000; i++) {
+        uint32_t start_ip = (172 << 24) | (16 << 16) | ((i % 256) << 8) | 1;
+        uint32_t end_ip = (172 << 24) | (16 << 16) | ((i % 256) << 8) | 100;
+        std::string range_str = ipv4ToString(start_ip) + "-" + ipv4ToString(end_ip);
+        uint16_t port = 10000 + (i % 1000);
+        policy::Policy policy{stress_rule_id++, range_str, std::to_string(port)};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add IPv4 range rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 IPv6 exact rules
+    for (int i = 0; i < 1000; i++) {
+        uint64_t hi = 0x20010db800000000ULL;
+        uint64_t lo = i;
+        std::string ip_str = ipv6ToString(hi, lo);
+        uint16_t port = 8000 + (i % 1000);
+        policy::Policy policy{stress_rule_id++, ip_str, std::to_string(port)};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add IPv6 exact rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 IPv6 CIDR rules
+    for (int i = 0; i < 1000; i++) {
+        uint64_t hi = 0x20010db800000000ULL | (static_cast<uint64_t>(i) << 16);
+        std::string cidr_str = ipv6ToString(hi, 0) + "/64";
+        uint16_t port = 9000 + (i % 1000);
+        policy::Policy policy{stress_rule_id++, cidr_str, std::to_string(port)};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add IPv6 CIDR rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 IPv6 range rules
+    for (int i = 0; i < 1000; i++) {
+        uint64_t hi = 0x20010db800000000ULL | (static_cast<uint64_t>(i) << 16);
+        uint64_t lo_start = 1;
+        uint64_t lo_end = 0x100;
+        std::string range_str = ipv6ToString(hi, lo_start) + "-" + ipv6ToString(hi, lo_end);
+        uint16_t port = 10000 + (i % 1000);
+        policy::Policy policy{stress_rule_id++, range_str, std::to_string(port)};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add IPv6 range rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 domain exact rules
+    for (int i = 0; i < 1000; i++) {
+        std::string domain = "stress" + std::to_string(i) + ".com";
+        policy::Policy policy{stress_rule_id++, domain, "443"};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add domain rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 wildcard domain rules
+    for (int i = 0; i < 1000; i++) {
+        std::string wildcard = "*.wildcard" + std::to_string(i) + ".com";
+        policy::Policy policy{stress_rule_id++, wildcard, "443"};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add wildcard rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 port rules (with variations)
+    for (int i = 0; i < 1000; i++) {
+        uint32_t ip = (10 << 24) | (100 << 16) | ((i / 256) << 8) | (i % 256);
+        std::string ip_str = ipv4ToString(ip);
+
+        std::string port_rule;
+        if (i % 3 == 0) {
+            port_rule = std::to_string(8000 + i);
+        } else if (i % 3 == 1) {
+            port_rule = std::to_string(8000 + i) + "," + std::to_string(9000 + i);
+        } else {
+            uint16_t port_start = 8000 + i;
+            uint16_t port_end = port_start + 10;
+            port_rule = std::to_string(port_start) + "-" + std::to_string(port_end);
+        }
+
+        policy::Policy policy{stress_rule_id++, ip_str, port_rule};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add port rule " << i << "\n";
+        }
+    }
+
+    // Insert 1000 no-port rules
+    for (int i = 0; i < 1000; i++) {
+        uint32_t ip = (10 << 24) | (200 << 16) | ((i / 256) << 8) | (i % 256);
+        std::string ip_str = ipv4ToString(ip);
+        policy::Policy policy{stress_rule_id++, ip_str, ""};
+        if (!stress_engine.addPolicy(policy)) {
+            std::cerr << "  ERROR: Failed to add no-port rule " << i << "\n";
+        }
+    }
+
+    auto end_insert = std::chrono::high_resolution_clock::now();
+    auto insert_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_insert - start_insert);
+
+    std::cout << "  ✓ Inserted 10,000 rules in " << insert_duration.count() << "ms\n";
+    std::cout << "    Average: " << (insert_duration.count() / 10.0) << "ms per 1000 rules\n";
+
+    // Query performance test: 10,000 random queries
+    auto start_query = std::chrono::high_resolution_clock::now();
+
+    int query_matches = 0;
+    for (int i = 0; i < 10000; i++) {
+        // Randomly query different rule types
+        int rule_type = i % 10;
+        FlowIP test_ip;
+        uint16_t test_port;
+        std::vector<std::string> test_domains;
+
+        switch (rule_type) {
+            case 0: // IPv4 exact
+                {
+                    uint32_t ip = (10 << 24) | ((i / 256) << 8) | (i % 256);
+                    test_ip = FlowIP::fromIPv4(ip);
+                    test_port = 8000 + (i % 1000);
+                }
+                break;
+            case 1: // IPv4 CIDR
+                {
+                    uint32_t network = (192 << 24) | (168 << 16) | ((i % 256) << 8);
+                    uint32_t ip = network | 100;
+                    test_ip = FlowIP::fromIPv4(ip);
+                    test_port = 9000 + (i % 1000);
+                }
+                break;
+            case 2: // IPv4 range
+                {
+                    uint32_t ip = (172 << 24) | (16 << 16) | ((i % 256) << 8) | 50;
+                    test_ip = FlowIP::fromIPv4(ip);
+                    test_port = 10000 + (i % 1000);
+                }
+                break;
+            case 3: // IPv6 exact
+                {
+                    uint64_t hi = 0x20010db800000000ULL;
+                    uint64_t lo = i;
+                    test_ip = FlowIP::fromIPv6(hi, lo);
+                    test_port = 8000 + (i % 1000);
+                }
+                break;
+            case 4: // IPv6 CIDR
+                {
+                    uint64_t hi = 0x20010db800000000ULL | (static_cast<uint64_t>(i % 256) << 16);
+                    uint64_t lo = 0x1000;
+                    test_ip = FlowIP::fromIPv6(hi, lo);
+                    test_port = 9000 + (i % 1000);
+                }
+                break;
+            case 5: // IPv6 range
+                {
+                    uint64_t hi = 0x20010db800000000ULL | (static_cast<uint64_t>(i % 256) << 16);
+                    uint64_t lo = 50;
+                    test_ip = FlowIP::fromIPv6(hi, lo);
+                    test_port = 10000 + (i % 1000);
+                }
+                break;
+            case 6: // Domain exact
+                {
+                    test_domains.push_back("stress" + std::to_string(i) + ".com");
+                    test_port = 443;
+                }
+                break;
+            case 7: // Wildcard domain
+                {
+                    test_domains.push_back("www.wildcard" + std::to_string(i) + ".com");
+                    test_port = 443;
+                }
+                break;
+            case 8: // Port rules
+                {
+                    uint32_t ip = (10 << 24) | (100 << 16) | ((i / 256) << 8) | (i % 256);
+                    test_ip = FlowIP::fromIPv4(ip);
+                    test_port = 8000 + i;
+                }
+                break;
+            case 9: // No-port rules
+                {
+                    uint32_t ip = (10 << 24) | (200 << 16) | ((i / 256) << 8) | (i % 256);
+                    test_ip = FlowIP::fromIPv4(ip);
+                    test_port = 8080;
+                }
+                break;
+        }
+
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, test_port, test_domains);
+        if (!matches.empty()) {
+            query_matches++;
+        }
+    }
+
+    auto end_query = std::chrono::high_resolution_clock::now();
+    auto query_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_query - start_query);
+
+    std::cout << "  ✓ Executed 10,000 queries in " << query_duration.count() << "ms\n";
+    std::cout << "    Average: " << (query_duration.count() * 100.0 / 10000.0) << "μs per query\n";
+    std::cout << "    Query match rate: " << (query_matches * 100 / 10000) << "%\n";
+
+    // Verify a sample of rules still work correctly
+    std::cout << "\n  Verifying sample queries...\n";
+
+    int sample_passed = 0;
+    int sample_total = 10;
+
+    // Test IPv4 exact (i=99 -> rule 100: 10.0.0.99:8099)
+    {
+        uint32_t ip = (10 << 24) | 99;
+        FlowIP test_ip = FlowIP::fromIPv4(ip);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 8099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test IPv4 CIDR (i=99 -> rule 1100: 192.168.99.0/24:9099, query 192.168.99.100:9099)
+    {
+        uint32_t ip = (192 << 24) | (168 << 16) | (99 << 8) | 100;
+        FlowIP test_ip = FlowIP::fromIPv4(ip);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 9099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test IPv4 range (i=99 -> rule 2100: 172.16.99.1-100:10099)
+    {
+        uint32_t ip = (172 << 24) | (16 << 16) | (99 << 8) | 50;
+        FlowIP test_ip = FlowIP::fromIPv4(ip);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 10099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test IPv6 exact (i=99 -> rule 3100: 2001:db8::99:8099)
+    {
+        FlowIP test_ip = FlowIP::fromIPv6(0x20010db800000000ULL, 99);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 8099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test IPv6 CIDR (i=99 -> rule 4100: 2001:db8:0:99::/64:9099)
+    {
+        FlowIP test_ip = FlowIP::fromIPv6(0x20010db800000000ULL | (99ULL << 16), 0x1000);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 9099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test IPv6 range (i=99 -> rule 5100: 2001:db8:0:99::1-100:10099)
+    {
+        FlowIP test_ip = FlowIP::fromIPv6(0x20010db800000000ULL | (99ULL << 16), 50);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 10099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test domain exact (i=99 -> rule 7100: stress99.com:443)
+    {
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, FlowIP{}, 443, {"stress99.com"});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test wildcard domain (i=99 -> rule 8100: *.wildcard99.com:443)
+    {
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, FlowIP{}, 443, {"www.wildcard99.com"});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test port rule (i=99 -> rule 9100)
+    {
+        uint32_t ip = (10 << 24) | (100 << 16) | 99;
+        FlowIP test_ip = FlowIP::fromIPv4(ip);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 8099, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    // Test no-port rule (i=99 -> rule 10100)
+    {
+        uint32_t ip = (10 << 24) | (200 << 16) | 99;
+        FlowIP test_ip = FlowIP::fromIPv4(ip);
+        auto matches = stress_engine.match(proto::ProtocolType::Unknown, test_ip, 9999, {});
+        if (!matches.empty()) sample_passed++;
+    }
+
+    std::cout << "    Sample verification: " << sample_passed << "/" << sample_total << " passed";
+    if (sample_passed == sample_total) {
+        std::cout << " ✓\n";
+    } else {
+        std::cout << " (expected 10/10)\n";
+    }
+
+    std::cout << "\n[Stress Test Summary]\n";
+    std::cout << "  Total rules in engine: " << stress_engine.getPolicyCount() << "\n";
+    std::cout << "  Insert throughput: " << (10000 * 1000 / insert_duration.count()) << " rules/second\n";
+    std::cout << "  Query throughput: " << (10000 * 1000 / query_duration.count()) << " queries/second\n";
+
     // Print final results
     std::cout << "\n========================================\n";
     std::cout << "  FINAL RESULTS\n";

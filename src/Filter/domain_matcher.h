@@ -18,9 +18,6 @@ struct DomainRule
     std::string pattern;
 };
 
-/* =========================
- * DomainMatcher
- * ========================= */
 class DomainMatcher
 {
 public:
@@ -48,7 +45,6 @@ private:
         bool is_wildcard;
     };
 
-    /* ===== Hash / Equal (C++20 heterogeneous lookup) ===== */
     struct StringHash
     {
         using is_transparent = void;
@@ -66,40 +62,20 @@ private:
     };
 
 private:
-    void matchAllRecursive(
-        const TrieNode* node,
-        const std::array<uint32_t, 16>& label_ids,
-        size_t count,
-        size_t index,
-        std::vector<RuleId>& results) const;
+    void matchAllRecursive(const TrieNode* node, const std::array<uint32_t, 16>& label_ids, size_t valid_count, size_t total_count, size_t index, std::vector<RuleId>& results) const;
 
-    bool removeRuleRecursive(
-        TrieNode* node,
-        const std::vector<uint32_t>& labels,
-        size_t index,
-        bool is_wildcard);
+    bool removeRuleRecursive(TrieNode* node, const std::vector<uint32_t>& labels, size_t index, bool is_wildcard);
 
     static bool validateDomain(std::string_view domain);
     static bool validateRulePattern(const std::string& rule);
     static void normalizeInPlace(std::string& s);
-
-    static size_t splitReverseInPlace(
-        std::string_view domain,
-        std::array<std::string_view, 16>& labels);
+    static size_t splitReverseInPlace(std::string_view domain, std::array<std::string_view, 16>& labels);
 
 private:
     std::unique_ptr<TrieNode> root_;
-
     std::unordered_map<uint64_t, RuleIndex> rule_index_;
-
-    std::unordered_map<
-        std::string,
-        uint32_t,
-        StringHash,
-        StringEqual> label_to_id_;
-
+    std::unordered_map<std::string, uint32_t, StringHash, StringEqual> label_to_id_;
     std::vector<std::string> id_to_label_;
-
     mutable std::shared_mutex mutex_;
 };
 
