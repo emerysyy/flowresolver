@@ -1,0 +1,9 @@
+sessionId: 3473829402458
+pid: 3425
+procPath: /usr/bin/ssh
+procName: ssh
+srcIP: 127.0.0.1
+srcPort: 0
+dstIP: 10.125.2.254
+dstPort: 53
+isTCP: NO

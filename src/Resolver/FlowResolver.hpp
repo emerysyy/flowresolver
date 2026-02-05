@@ -5,8 +5,10 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
+#include <cstring>
 #include "../DNS/dns_cache.hpp"
-#include "ip_addr.hpp"
+#include "../DNS/ip_domain_cache.hpp"
+#include "../Filter/ip_index.h"
 
 // 前向声明
 namespace proto {
@@ -62,8 +64,8 @@ namespace flow {
     struct FlowContext {
         // 五元组（唯一标识一个流）
         struct FiveTuple {
-            IpAddr src_ip;
-            IpAddr dst_ip;
+            FlowIP src_ip;
+            FlowIP dst_ip;
             uint16_t src_port;
             uint16_t dst_port;
             L4Proto proto;
@@ -82,7 +84,7 @@ namespace flow {
 
         // 方向（从客户端到服务端，或反向）
         Direction direction;
-        
+
         // 域名解析状态
         DomainResolutionState domainState;
 
@@ -94,6 +96,79 @@ namespace flow {
 
         // 提取的域名列表（可能有多个，如DNS CNAME链）
         std::vector<std::string> domains;
+
+        // ========== 便捷构造方法 ==========
+
+        /**
+         * @brief 从字符串IP地址解析为FlowIP对象
+         * @param ip_str IP地址字符串（支持IPv4如"192.168.1.1"和IPv6如"2001:db8::1"）
+         * @return FlowIP对象，解析失败返回Nil类型
+         */
+        static FlowIP parseIPString(const char* ip_str) {
+            if (!ip_str || *ip_str == '\0') {
+                return FlowIP(); // 返回Nil
+            }
+
+            // 使用 IPUtils 中的现有解析函数
+            // 检测是IPv4还是IPv6（通过是否包含':'判断）
+            if (std::strchr(ip_str, ':') != nullptr) {
+                // IPv6
+                uint64_t hi = 0, lo = 0;
+                if (IPUtils::parseIPv6(ip_str, hi, lo)) {
+                    return FlowIP::fromIPv6(hi, lo);
+                }
+            } else {
+                // IPv4
+                uint32_t ip = 0;
+                if (IPUtils::parseIPv4(ip_str, ip)) {
+                    return FlowIP::fromIPv4(ip);
+                }
+            }
+
+            // 解析失败，返回Nil
+            return FlowIP();
+        }
+
+        /**
+         * @brief 从字符串IP地址解析为FlowIP对象（std::string版本）
+         */
+        static FlowIP parseIPString(const std::string& ip_str) {
+            return parseIPString(ip_str.c_str());
+        }
+
+        /**
+         * @brief 创建FlowContext的便捷工厂方法
+         * @param src_ip_str 源IP地址字符串
+         * @param dst_ip_str 目标IP地址字符串
+         * @param src_port 源端口
+         * @param dst_port 目标端口
+         * @param proto 传输层协议（TCP/UDP）
+         * @param dir 流方向（Send/Recv）
+         * @return FlowContext对象
+         */
+        static FlowContext create(const char* src_ip_str, const char* dst_ip_str,
+                                 uint16_t src_port, uint16_t dst_port,
+                                 L4Proto proto, Direction dir = Direction::Send) {
+            FlowContext ctx;
+            ctx.tuple.src_ip = parseIPString(src_ip_str);
+            ctx.tuple.dst_ip = parseIPString(dst_ip_str);
+            ctx.tuple.src_port = src_port;
+            ctx.tuple.dst_port = dst_port;
+            ctx.tuple.proto = proto;
+            ctx.direction = dir;
+            ctx.domainState = DomainResolutionState::NotApplicable;
+            ctx.lastResolveAction = ResolverAction::None;
+            return ctx;
+        }
+
+        /**
+         * @brief 创建FlowContext的便捷工厂方法（std::string版本）
+         */
+        static FlowContext create(const std::string& src_ip_str, const std::string& dst_ip_str,
+                                 uint16_t src_port, uint16_t dst_port,
+                                 L4Proto proto, Direction dir = Direction::Send) {
+            return create(src_ip_str.c_str(), dst_ip_str.c_str(), src_port, dst_port, proto, dir);
+        }
 
     };
 
@@ -108,6 +183,18 @@ namespace flow {
         ResolverResult onSendData(PacketView pkt, FlowContext& ctx);
         ResolverResult onRecvData(PacketView pkt, FlowContext& ctx);
 
+        /**
+         * @brief 根据 IP 地址查询关联的域名列表
+         * @param ip FlowIP 对象
+         * @return 域名列表，如果未找到返回空
+         */
+        std::vector<std::string> queryDomainsByIP(const FlowIP& ip);
+
+        /**
+         * @brief 清理过期的 IP-Domain 缓存条目
+         */
+        void cleanExpiredIPDomainCache();
+
     private:
         ResolverResult handleDNSQuery(PacketView pkt, FlowContext& ctx);
         ResolverResult handleDNSResponse(PacketView pkt, FlowContext& ctx);
@@ -116,6 +203,7 @@ namespace flow {
         std::unique_ptr<proto::Detector> mProtocolDetector;
         std::unique_ptr<policy::PolicyEngine> mPolicyEngine;
         dns::DNSResponseCache mDnsRespCache;
+        dns::IPDomainCache mIPDomainCache;  // IP-Domain 映射缓存
 
     };
 
@@ -129,8 +217,8 @@ namespace std {
     template<>
     struct hash<flow::FlowContext::FiveTuple> {
         size_t operator()(const flow::FlowContext::FiveTuple& ft) const {
-            size_t h1 = hash<flow::IpAddr>{}(ft.src_ip);
-            size_t h2 = hash<flow::IpAddr>{}(ft.dst_ip);
+            size_t h1 = hash<flow::FlowIP>{}(ft.src_ip);
+            size_t h2 = hash<flow::FlowIP>{}(ft.dst_ip);
             size_t h3 = hash<uint16_t>{}(ft.src_port);
             size_t h4 = hash<uint16_t>{}(ft.dst_port);
             size_t h5 = hash<uint8_t>{}(static_cast<uint8_t>(ft.proto));

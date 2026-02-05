@@ -115,12 +115,7 @@ struct NameParseResult {
 class DNSParser {
 public:
     bool parse(const uint8_t* data, size_t length, DNSMessage& out);
-
-    /**
-     * Check if port matches DNS standard ports
-     * DNS 使用 TCP/UDP 53 端口
-     * TCP DNS 用于大于 512 字节的响应，需要 2 字节长度前缀
-     */
+    
     static bool matchesStandardPort(uint16_t port);
 
 private:

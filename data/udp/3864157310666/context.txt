@@ -1,0 +1,9 @@
+sessionId: 3864157310666
+pid: 590
+procPath: /Applications/Lark.app/Contents/MacOS/Feishu
+procName: Feishu
+srcIP: 127.0.0.1
+srcPort: 0
+dstIP: 10.125.2.254
+dstPort: 53
+isTCP: NO

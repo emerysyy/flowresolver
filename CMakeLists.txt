@@ -17,6 +17,7 @@ endif()
 set(DNS_SOURCES
     src/DNS/dns_message.cpp
     src/DNS/dns_cache.cpp
+    src/DNS/ip_domain_cache.cpp
 )
 
 set(PROTOCOL_SOURCES
@@ -43,12 +44,18 @@ set(POLICY_SOURCES
     src/Policy/policy_engine.cpp
 )
 
+set(FILTER_SOURCES
+    src/Filter/domain_matcher.cpp
+    src/Filter/port_matcher.cpp
+)
+
 # Library target
 add_library(domainresolver
     ${DNS_SOURCES}
     ${PROTOCOL_SOURCES}
     ${RESOLVER_SOURCES}
     ${POLICY_SOURCES}
+    ${FILTER_SOURCES}
 )
 
 # Include directories

@@ -1,0 +1,9 @@
+sessionId: 3502171229625
+pid: 851
+procPath: /Applications/Clash Verge.app/Contents/MacOS/verge-mihomo
+procName: verge-mihomo
+srcIP: 127.0.0.1
+srcPort: 0
+dstIP: 10.125.2.254
+dstPort: 53
+isTCP: NO

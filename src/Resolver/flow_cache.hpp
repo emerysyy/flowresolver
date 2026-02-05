@@ -6,7 +6,7 @@
 #include <mutex>
 #include <chrono>
 #include <functional>
-#include "ip_addr.hpp"
+#include "../Filter/ip_index.h"
 
 // 前向声明避免循环依赖
 namespace proto {
@@ -19,8 +19,8 @@ namespace flow {
  * 五元组流键
  */
 struct FlowKey {
-    IpAddr src_ip;        // 源IP
-    IpAddr dst_ip;        // 目标IP
+    flow::FlowIP src_ip;        // 源IP
+    flow::FlowIP dst_ip;        // 目标IP
     uint16_t src_port;    // 源端口
     uint16_t dst_port;    // 目标端口
     uint8_t  protocol;    // 协议 (TCP=6, UDP=17)
@@ -40,8 +40,8 @@ struct FlowKey {
  */
 struct FlowKeyHash {
     size_t operator()(const FlowKey& key) const {
-        size_t h1 = std::hash<IpAddr>{}(key.src_ip);
-        size_t h2 = std::hash<IpAddr>{}(key.dst_ip);
+        size_t h1 = std::hash<flow::FlowIP>{}(key.src_ip);
+        size_t h2 = std::hash<flow::FlowIP>{}(key.dst_ip);
         size_t h3 = std::hash<uint16_t>{}(key.src_port);
         size_t h4 = std::hash<uint16_t>{}(key.dst_port);
         size_t h5 = std::hash<uint8_t>{}(key.protocol);
@@ -79,10 +79,10 @@ class FlowCache {
 public:
     /**
      * 构造函数
-     * @param ttl 缓存过期时间（秒），默认 60 秒
+     * @param ttl 缓存过期时间（秒），默认 300 秒
      * @param max_size 最大缓存条目数，默认 10000
      */
-    explicit FlowCache(uint32_t ttl = 60, size_t max_size = 10000);
+    explicit FlowCache(uint32_t ttl = 300, size_t max_size = 10000);
 
     ~FlowCache() = default;
 

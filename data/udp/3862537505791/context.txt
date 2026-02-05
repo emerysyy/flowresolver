@@ -1,0 +1,9 @@
+sessionId: 3862537505791
+pid: 1784
+procPath: /Applications/Lark.app/Contents/Frameworks/Lark Framework.framework/Versions/121.0.6167.86/Helpers/Lark Helper.app/Contents/MacOS/Lark Helper
+procName: Lark Helper
+srcIP: 127.0.0.1
+srcPort: 0
+dstIP: 10.125.2.254
+dstPort: 53
+isTCP: NO

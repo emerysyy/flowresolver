@@ -71,10 +71,10 @@ class Detector {
 public:
     /**
      * 构造函数
-     * @param cache_ttl 缓存过期时间（秒），默认 60 秒
+     * @param cache_ttl 缓存过期时间（秒），默认 300 秒
      * @param cache_size 最大缓存条目数，默认 10000
      */
-    Detector(uint32_t cache_ttl = 60, size_t cache_size = 10000);
+    Detector(uint32_t cache_ttl = 300, size_t cache_size = 10000);
     ~Detector() = default;
 
     /**

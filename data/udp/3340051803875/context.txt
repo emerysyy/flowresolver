@@ -1,0 +1,9 @@
+sessionId: 3340051803875
+pid: 634
+procPath: /System/Applications/Utilities/Screen Sharing.app/Contents/MacOS/Screen Sharing
+procName: Screen Sharing
+srcIP: 127.0.0.1
+srcPort: 0
+dstIP: 10.125.2.254
+dstPort: 53
+isTCP: NO

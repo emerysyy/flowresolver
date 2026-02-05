@@ -1,0 +1,9 @@
+sessionId: 3428532883583
+pid: 989
+procPath: /Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)
+procName: Code Helper (Plugin)
+srcIP: 127.0.0.1
+srcPort: 0
+dstIP: 10.125.2.254
+dstPort: 53
+isTCP: NO

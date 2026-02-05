@@ -33,7 +33,18 @@ ResolverResult FlowResolver::handleDNSQuery(PacketView pkt, FlowContext& ctx) {
         ctx.domainState = DomainResolutionState::NotApplicable;
     }
 
-    // DNS 查询直接 bypass
+    // 查询 DNS response cache，如果命中则返回缓存的响应
+    std::vector<uint8_t> cachedResponse;
+    if (mDnsRespCache.buildResponseFromCache(pkt.data, pkt.length, cachedResponse)) {
+        // 缓存命中，返回注入响应
+        ResolverResult result;
+        result.action = ResolverAction::InjectResponse;
+        result.responseData = std::move(cachedResponse);
+        ctx.lastResolveAction = ResolverAction::InjectResponse;
+        return result;
+    }
+
+    // DNS 查询直接 bypass（让真实 DNS 服务器处理）
     ResolverResult result;
     result.action = ResolverAction::Bypass;
     ctx.lastResolveAction = ResolverAction::Bypass;
@@ -41,12 +52,85 @@ ResolverResult FlowResolver::handleDNSQuery(PacketView pkt, FlowContext& ctx) {
 }
 
 ResolverResult FlowResolver::handleDNSResponse(PacketView pkt, FlowContext& ctx) {
+    // 基本长度校验
+    if (pkt.length < 12) {
+        // 非法 DNS 响应，直接 bypass
+        ResolverResult result;
+        result.action = ResolverAction::Bypass;
+        return result;
+    }
 
-    //TODO: 解析DNS响应，提取IP 构建 IP-DOMAIN 缓存
+    // 解析 DNS 响应
+    dns::DNSParser parser;
+    dns::DNSMessage msg;
+    if (!parser.parse(pkt.data, pkt.length, msg)) {
+        // 解析失败，直接 bypass
+        ResolverResult result;
+        result.action = ResolverAction::Bypass;
+        return result;
+    }
 
-    // 存储 DNS 响应到缓存
-    mDnsRespCache.storeResponse(pkt.data, pkt.length);
+    // 检查响应码
+    if (msg.header.dns_rcode() != 0) {
+        // DNS 错误响应（如 NXDOMAIN），直接 bypass
+        ResolverResult result;
+        result.action = ResolverAction::Bypass;
+        return result;
+    }
 
+    // 提取 IP 地址和域名（CNAME）
+    std::vector<std::string> ipList;
+    std::vector<std::string> domainList;
+    uint32_t maxTTL = 0;
+
+    for (const auto& rr : msg.answers) {
+        // 记录最大 TTL
+        if (rr.ttl > maxTTL) {
+            maxTTL = rr.ttl;
+        }
+
+        // 提取 IPv4 地址
+        if (auto ip4 = rr.ipv4()) {
+            ipList.push_back(*ip4);
+            continue;
+        }
+
+        // 提取 IPv6 地址
+        if (auto ip6 = rr.ipv6()) {
+            ipList.push_back(*ip6);
+            continue;
+        }
+
+        // 提取 CNAME 域名
+        if (rr.domain) {
+            domainList.push_back(*rr.domain);
+            ctx.domains.push_back(*rr.domain);
+        }
+    }
+
+    // 如果提取到 IP 地址或域名，存储到缓存
+    if (!ipList.empty() || !domainList.empty()) {
+        // 存储完整的 DNS 响应到缓存
+        mDnsRespCache.storeResponse(pkt.data, pkt.length);
+
+        // 将 IP-Domain 映射存储到专门的索引中
+        // 用于反向查询（根据 IP 查找域名）
+        if (!ipList.empty() && !ctx.domains.empty()) {
+            // 合并查询域名和 CNAME 域名
+            std::vector<std::string> allDomains = ctx.domains;
+            allDomains.insert(allDomains.end(), domainList.begin(), domainList.end());
+
+            // 为每个 IP 地址建立域名映射
+            for (const auto& ipStr : ipList) {
+                FlowIP flowIP = FlowContext::parseIPString(ipStr);
+                if (!flowIP.isNil()) {
+                    mIPDomainCache.addMapping(flowIP, allDomains, maxTTL);
+                }
+            }
+        }
+    }
+
+    // DNS 响应直接 bypass
     ResolverResult result;
     result.action = ResolverAction::Bypass;
     return result;
@@ -111,7 +195,16 @@ ResolverResult FlowResolver::onRecvData(PacketView pkt, FlowContext& ctx) {
     }
 
 
-    // 3. 匹配策略（protocol + IP + port + domains）
+    // 4. 如果上一次解析动作不为None，则直接返回上一次解析动作
+    if (ctx.lastResolveAction != ResolverAction::None)
+    {
+        ResolverResult result;
+        result.action = ctx.lastResolveAction;
+        return result;
+    }
+    
+
+    // 5. 匹配策略（protocol + IP + port + domains）
     auto matchResult = mPolicyEngine->match(
         ctx.protocol,
         ctx.tuple.src_ip,
@@ -121,9 +214,17 @@ ResolverResult FlowResolver::onRecvData(PacketView pkt, FlowContext& ctx) {
         ctx.domains
     );
 
-    // 4. 暂时全部返回 bypass（策略匹配未完全实现）
+    // 6. 暂时全部返回 bypass（策略匹配未完全实现）
     ResolverResult result;
     result.action = ResolverAction::Bypass;
     ctx.lastResolveAction = ResolverAction::Bypass;
     return result;
+}
+
+std::vector<std::string> FlowResolver::queryDomainsByIP(const FlowIP& ip) {
+    return mIPDomainCache.queryDomains(ip);
+}
+
+void FlowResolver::cleanExpiredIPDomainCache() {
+    mIPDomainCache.cleanExpired();
 }
