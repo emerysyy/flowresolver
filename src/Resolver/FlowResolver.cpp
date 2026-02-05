@@ -171,9 +171,7 @@ ResolverResult FlowResolver::onSendData(PacketView pkt, FlowContext& ctx) {
     // 5. 匹配策略（protocol + IP + port + domains）
     auto matchResult = mPolicyEngine->match(
         ctx.protocol,
-        ctx.tuple.src_ip,
         ctx.tuple.dst_ip,
-        ctx.tuple.src_port,
         ctx.tuple.dst_port,
         ctx.domains
     );
@@ -207,9 +205,7 @@ ResolverResult FlowResolver::onRecvData(PacketView pkt, FlowContext& ctx) {
     // 5. 匹配策略（protocol + IP + port + domains）
     auto matchResult = mPolicyEngine->match(
         ctx.protocol,
-        ctx.tuple.src_ip,
         ctx.tuple.dst_ip,
-        ctx.tuple.src_port,
         ctx.tuple.dst_port,
         ctx.domains
     );

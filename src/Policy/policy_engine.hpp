@@ -6,70 +6,62 @@
 #include <cstdint>
 #include <optional>
 #include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
+#include "../Filter/filter_common.h"
 #include "../Filter/ip_index.h"
+#include "../Filter/domain_matcher.h"
+#include "../Filter/port_matcher.h"
 
 namespace proto {
     enum class ProtocolType : int;
 }
 
 namespace policy {
-
-/**
- * 策略动作
- */
-enum class Action {
-    None,        // 未匹配策略
-    Bypass,      // 放行
-    Drop,        // 丢弃
-    Redirect,    // 重定向
-    Modify       // 修改
-};
-
-/**
- * 策略匹配结果
- */
-struct MatchResult {
-    Action action;
-    std::string reason;
-    std::optional<flow::FlowIP> redirectIP;  // 重定向目标IP
-};
-
 struct Policy {
-    uint32_t ruleid;
-    std::string address; /// 可能是ipv4 ipv6, ipcidr, iprange, domain, wildcard domain
-    std::optional<uint16_t> port; /// 可能未设置domain
+    flow::RuleId rule_id;
+    std::string address;       // ipv4, ipv6, ipcidr, iprange, domain, wildcard domain
+    std::string port; // single port, multiple ports, port-range
 };
 
-
-/**
- * 策略引擎
- * 只做规则匹配
- */
 class PolicyEngine {
 public:
     PolicyEngine();
     ~PolicyEngine() = default;
 
-    /**
-     * 匹配策略
-     *
-     * @param protocol 协议类型
-     * @param srcIP 源IP
-     * @param dstIP 目标IP
-     * @param srcPort 源端口
-     * @param dstPort 目标端口
-     * @param domains 域名列表
-     * @return 匹配结果
-     */
-    MatchResult match(
+    bool addPolicy(const Policy& policy);
+    bool removePolicy(flow::RuleId rule_id);
+    void clear();
+    size_t getPolicyCount() const;
+
+    std::unordered_set<flow::RuleId> match(
         proto::ProtocolType protocol,
-        const flow::FlowIP& srcIP,
         const flow::FlowIP& dstIP,
-        uint16_t srcPort,
         uint16_t dstPort,
         const std::vector<std::string>& domains
     ) const;
 
+private:
+    bool parseAddress(const std::string& address,
+                     flow::FlowIP& ip,
+                     flow::IPv4CIDR& v4_cidr,
+                     flow::IPv4Range& v4_range,
+                     flow::IPv6CIDR& v6_cidr,
+                     flow::IPv6Range& v6_range) const;
+
+    bool parsePortString(const std::string& portStr, 
+                        const flow::RuleId ruleId, 
+                        std::vector<flow::PortMatcher::Rule>& rules);
+
+    void rebuildPortMatcher();
+
+private:
+    flow::IPIndex ip_index_;
+    flow::PortMatcher port_matcher_;
+    flow::DomainMatcher domain_matcher_;
+
+    std::unordered_map<flow::RuleId, Policy> policies_;
+    std::vector<flow::PortMatcher::Rule> port_rules_;
 };
 
 } // namespace policy

@@ -70,25 +70,35 @@ find_package(Threads REQUIRED)
 target_link_libraries(domainresolver PUBLIC Threads::Threads)
 
 # Optional: Test target
-option(BUILD_TESTS "Build test programs" OFF)
+option(BUILD_TESTS "Build test programs" ON)
 
 if(BUILD_TESTS)
     enable_testing()
 
-    # DNS test
-    add_executable(test_dns
-        tests/test_dns.cpp
+    # Policy engine test
+    add_executable(test_policy_engine
+        tests/test_policy_engine.cpp
+        src/Filter/domain_matcher.cpp
+        src/Filter/port_matcher.cpp
     )
-    target_link_libraries(test_dns domainresolver)
+    target_link_libraries(test_policy_engine domainresolver)
 
-    # Protocol parser test
-    add_executable(test_protocol
-        tests/test_protocol.cpp
-    )
-    target_link_libraries(test_protocol domainresolver)
+    add_test(NAME policy_engine_test COMMAND test_policy_engine)
 
-    add_test(NAME dns_test COMMAND test_dns)
-    add_test(NAME protocol_test COMMAND test_protocol)
+    # DNS test (commented out - file not exists)
+    # add_executable(test_dns
+    #     tests/test_dns.cpp
+    # )
+    # target_link_libraries(test_dns domainresolver)
+
+    # Protocol parser test (commented out - file not exists)
+    # add_executable(test_protocol
+    #     tests/test_protocol.cpp
+    # )
+    # target_link_libraries(test_protocol domainresolver)
+
+    # add_test(NAME dns_test COMMAND test_dns)
+    # add_test(NAME protocol_test COMMAND test_protocol)
 endif()
 
 # Installation rules
