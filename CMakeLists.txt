@@ -127,6 +127,24 @@ if(BUILD_TESTS)
     )
     target_link_libraries(test_latency domainresolver)
 
+    # Performance & concurrency test
+    add_executable(test_performance
+        tests/test_performance.cpp
+    )
+    target_link_libraries(test_performance domainresolver)
+
+    # Memory analysis test
+    add_executable(test_memory
+        tests/test_memory.cpp
+    )
+    target_link_libraries(test_memory domainresolver)
+
+    # Stress test with CPU & memory monitoring
+    add_executable(test_stress
+        tests/test_stress.cpp
+    )
+    target_link_libraries(test_stress domainresolver)
+
     # DNS test (commented out - file not exists)
     # add_executable(test_dns
     #     tests/test_dns.cpp

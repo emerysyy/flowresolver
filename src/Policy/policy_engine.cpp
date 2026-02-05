@@ -16,6 +16,28 @@ PolicyEngine::PolicyEngine() {
 }
 
 bool PolicyEngine::addPolicy(const Policy& policy) {
+    return addPolicyInternal(policy, false);
+}
+
+size_t PolicyEngine::addPolicies(const std::vector<Policy>& policies) {
+    size_t success_count = 0;
+
+    // 批量添加，延迟rebuild
+    for (const auto& policy : policies) {
+        if (addPolicyInternal(policy, true)) {
+            success_count++;
+        }
+    }
+
+    // 统一rebuild一次
+    if (success_count > 0) {
+        rebuildIndex();
+    }
+
+    return success_count;
+}
+
+bool PolicyEngine::addPolicyInternal(const Policy& policy, bool defer_rebuild) {
     if (policies_.count(policy.rule_id)) {
         return false;
     }
@@ -68,10 +90,12 @@ bool PolicyEngine::addPolicy(const Policy& policy) {
     if (parsePortString(policy.port, policy.rule_id, portRules))
     {
         port_rules_.insert(port_rules_.end(), portRules.begin(), portRules.end());
-        // 构建 LUT
-        rebuildPortMatcher();
+        // 只在非延迟模式下rebuild
+        if (!defer_rebuild) {
+            rebuildPortMatcher();
+        }
     }
-    
+
 
     // 域名处理
     if (!policy.address.empty() && (policy.address.find('.') != std::string::npos ||
@@ -86,6 +110,10 @@ bool PolicyEngine::addPolicy(const Policy& policy) {
 
     policies_[policy.rule_id] = policy;
     return true;
+}
+
+void PolicyEngine::rebuildIndex() {
+    rebuildPortMatcher();
 }
 
 void PolicyEngine::rebuildPortMatcher() {
@@ -134,56 +162,65 @@ std::unordered_set<flow::RuleId> PolicyEngine::match(proto::ProtocolType protoco
                                 uint16_t dstPort,
                                 const std::vector<std::string>& domains) const {
     // 1. 端口匹配（port 0 表示全端口）
-    std::unordered_set<flow::RuleId> port_matches;
+    // 使用 vector 替代 unordered_set，对于小数据集性能更好
+    std::vector<flow::RuleId> port_matches;
     auto port_results = port_matcher_.match(dstPort);
-    port_matches.insert(port_results.begin(), port_results.end());
     auto zero_port_results = port_matcher_.match(0);
-    port_matches.insert(zero_port_results.begin(), zero_port_results.end());
 
-    std::unordered_set<flow::RuleId> final_matches;
+    // 预分配空间
+    port_matches.reserve(port_results.size() + zero_port_results.size());
+    port_matches.insert(port_matches.end(), port_results.begin(), port_results.end());
+    port_matches.insert(port_matches.end(), zero_port_results.begin(), zero_port_results.end());
+
+    // 排序并去重
+    std::sort(port_matches.begin(), port_matches.end());
+    port_matches.erase(std::unique(port_matches.begin(), port_matches.end()), port_matches.end());
+
+    std::vector<flow::RuleId> final_matches;
+    final_matches.reserve(16); // 预分配合理大小
 
     // 2. 判断是否使用 IP 匹配或域名匹配
     if (dstIP.isNil()) {
         // IP 为空：只使用域名匹配
-        // 域名规则已通过 addNil 添加到 ip_index_，但这里我们只使用 domain_matcher
-        std::unordered_set<flow::RuleId> domain_matches;
+        std::vector<flow::RuleId> domain_matches;
         for (const auto& domain : domains) {
             auto matches = domain_matcher_.match(domain);
-            domain_matches.insert(matches.begin(), matches.end());
+            domain_matches.insert(domain_matches.end(), matches.begin(), matches.end());
         }
 
-        // 域名匹配与端口匹配取交集
-        for (flow::RuleId rule_id : domain_matches) {
-            if (port_matches.find(rule_id) != port_matches.end()) {
-                final_matches.insert(rule_id);
-            }
-        }
+        // 排序并去重
+        std::sort(domain_matches.begin(), domain_matches.end());
+        domain_matches.erase(std::unique(domain_matches.begin(), domain_matches.end()), domain_matches.end());
+
+        // 域名匹配与端口匹配取交集（使用 std::set_intersection）
+        std::set_intersection(domain_matches.begin(), domain_matches.end(),
+                            port_matches.begin(), port_matches.end(),
+                            std::back_inserter(final_matches));
     } else {
         // IP 不为空：使用 IP 匹配，也可以结合域名匹配
-        std::unordered_set<flow::RuleId> ip_matches;
+        std::vector<flow::RuleId> ip_or_domain;
         auto ip_results = ip_index_.queryIds(dstIP);
-        ip_matches.insert(ip_results.begin(), ip_results.end());
+        ip_or_domain.reserve(ip_results.size() + domains.size() * 4);
+        ip_or_domain.insert(ip_or_domain.end(), ip_results.begin(), ip_results.end());
 
         // 域名匹配
-        std::unordered_set<flow::RuleId> domain_matches;
         for (const auto& domain : domains) {
             auto matches = domain_matcher_.match(domain);
-            domain_matches.insert(matches.begin(), matches.end());
+            ip_or_domain.insert(ip_or_domain.end(), matches.begin(), matches.end());
         }
 
-        // IP 或域名匹配并集
-        std::unordered_set<flow::RuleId> ip_or_domain = ip_matches;
-        ip_or_domain.insert(domain_matches.begin(), domain_matches.end());
+        // 排序并去重
+        std::sort(ip_or_domain.begin(), ip_or_domain.end());
+        ip_or_domain.erase(std::unique(ip_or_domain.begin(), ip_or_domain.end()), ip_or_domain.end());
 
         // 与端口匹配交集
-        for (flow::RuleId rule_id : ip_or_domain) {
-            if (port_matches.find(rule_id) != port_matches.end()) {
-                final_matches.insert(rule_id);
-            }
-        }
+        std::set_intersection(ip_or_domain.begin(), ip_or_domain.end(),
+                            port_matches.begin(), port_matches.end(),
+                            std::back_inserter(final_matches));
     }
 
-   return final_matches;
+    // 转换回 unordered_set（保持接口兼容）
+    return std::unordered_set<flow::RuleId>(final_matches.begin(), final_matches.end());
 }
 
 

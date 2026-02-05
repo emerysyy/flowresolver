@@ -29,7 +29,12 @@ public:
     PolicyEngine();
     ~PolicyEngine() = default;
 
+    // 单条添加（立即rebuild，适合少量规则）
     bool addPolicy(const Policy& policy);
+
+    // 批量添加（内部自动优化，推荐使用）
+    size_t addPolicies(const std::vector<Policy>& policies);
+
     bool removePolicy(flow::RuleId rule_id);
     void clear();
     size_t getPolicyCount() const;
@@ -42,6 +47,10 @@ public:
     ) const;
 
 private:
+    // 内部使用：延迟rebuild的添加接口
+    bool addPolicyInternal(const Policy& policy, bool defer_rebuild);
+    void rebuildIndex();  // 手动触发rebuild
+
     bool parseAddress(const std::string& address,
                      flow::FlowIP& ip,
                      flow::IPv4CIDR& v4_cidr,
