@@ -790,15 +790,16 @@ int main() {
 
     auto start_insert = std::chrono::high_resolution_clock::now();
 
+    // Prepare all policies in batch
+    std::vector<policy::Policy> stress_policies;
+    stress_policies.reserve(10000);
+
     // Insert 1000 IPv4 exact rules
     for (int i = 0; i < 1000; i++) {
         uint32_t ip = (10 << 24) | ((i / 256) << 8) | (i % 256);
         std::string ip_str = ipv4ToString(ip);
         uint16_t port = 8000 + (i % 1000);
-        policy::Policy policy{stress_rule_id++, ip_str, std::to_string(port)};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add IPv4 exact rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, ip_str, std::to_string(port)});
     }
 
     // Insert 1000 IPv4 CIDR rules
@@ -806,10 +807,7 @@ int main() {
         uint32_t network = (192 << 24) | (168 << 16) | ((i % 256) << 8);
         std::string cidr_str = ipv4ToString(network) + "/24";
         uint16_t port = 9000 + (i % 1000);
-        policy::Policy policy{stress_rule_id++, cidr_str, std::to_string(port)};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add IPv4 CIDR rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, cidr_str, std::to_string(port)});
     }
 
     // Insert 1000 IPv4 range rules
@@ -818,10 +816,7 @@ int main() {
         uint32_t end_ip = (172 << 24) | (16 << 16) | ((i % 256) << 8) | 100;
         std::string range_str = ipv4ToString(start_ip) + "-" + ipv4ToString(end_ip);
         uint16_t port = 10000 + (i % 1000);
-        policy::Policy policy{stress_rule_id++, range_str, std::to_string(port)};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add IPv4 range rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, range_str, std::to_string(port)});
     }
 
     // Insert 1000 IPv6 exact rules
@@ -830,10 +825,7 @@ int main() {
         uint64_t lo = i;
         std::string ip_str = ipv6ToString(hi, lo);
         uint16_t port = 8000 + (i % 1000);
-        policy::Policy policy{stress_rule_id++, ip_str, std::to_string(port)};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add IPv6 exact rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, ip_str, std::to_string(port)});
     }
 
     // Insert 1000 IPv6 CIDR rules
@@ -841,10 +833,7 @@ int main() {
         uint64_t hi = 0x20010db800000000ULL | (static_cast<uint64_t>(i) << 16);
         std::string cidr_str = ipv6ToString(hi, 0) + "/64";
         uint16_t port = 9000 + (i % 1000);
-        policy::Policy policy{stress_rule_id++, cidr_str, std::to_string(port)};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add IPv6 CIDR rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, cidr_str, std::to_string(port)});
     }
 
     // Insert 1000 IPv6 range rules
@@ -854,28 +843,19 @@ int main() {
         uint64_t lo_end = 0x100;
         std::string range_str = ipv6ToString(hi, lo_start) + "-" + ipv6ToString(hi, lo_end);
         uint16_t port = 10000 + (i % 1000);
-        policy::Policy policy{stress_rule_id++, range_str, std::to_string(port)};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add IPv6 range rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, range_str, std::to_string(port)});
     }
 
     // Insert 1000 domain exact rules
     for (int i = 0; i < 1000; i++) {
         std::string domain = "stress" + std::to_string(i) + ".com";
-        policy::Policy policy{stress_rule_id++, domain, "443"};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add domain rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, domain, "443"});
     }
 
     // Insert 1000 wildcard domain rules
     for (int i = 0; i < 1000; i++) {
         std::string wildcard = "*.wildcard" + std::to_string(i) + ".com";
-        policy::Policy policy{stress_rule_id++, wildcard, "443"};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add wildcard rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, wildcard, "443"});
     }
 
     // Insert 1000 port rules (with variations)
@@ -894,20 +874,20 @@ int main() {
             port_rule = std::to_string(port_start) + "-" + std::to_string(port_end);
         }
 
-        policy::Policy policy{stress_rule_id++, ip_str, port_rule};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add port rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, ip_str, port_rule});
     }
 
     // Insert 1000 no-port rules
     for (int i = 0; i < 1000; i++) {
         uint32_t ip = (10 << 24) | (200 << 16) | ((i / 256) << 8) | (i % 256);
         std::string ip_str = ipv4ToString(ip);
-        policy::Policy policy{stress_rule_id++, ip_str, ""};
-        if (!stress_engine.addPolicy(policy)) {
-            std::cerr << "  ERROR: Failed to add no-port rule " << i << "\n";
-        }
+        stress_policies.push_back(policy::Policy{stress_rule_id++, ip_str, ""});
+    }
+
+    // Batch add all policies
+    size_t added = stress_engine.addPolicies(stress_policies);
+    if (added != stress_policies.size()) {
+        std::cerr << "  WARNING: Only added " << added << " out of " << stress_policies.size() << " policies\n";
     }
 
     auto end_insert = std::chrono::high_resolution_clock::now();
